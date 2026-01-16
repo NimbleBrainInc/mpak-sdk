@@ -1,0 +1,58 @@
+{
+  "name": "@nimblebrain/mpak-sdk",
+  "version": "0.0.1",
+  "description": "TypeScript SDK for mpak registry - MCPB bundles and Agent Skills",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "verify": "npm run typecheck && npm run lint && npm run test",
+    "prepublishOnly": "npm run clean && npm run verify && npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "NimbleBrain <support@nimblebrain.ai>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NimbleBrainInc/mpak-sdk.git"
+  },
+  "keywords": [
+    "mpak",
+    "mcp",
+    "skills",
+    "agent",
+    "nimblebrain"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.7",
+    "@vitest/coverage-v8": "^2.1.8",
+    "eslint": "^9.18.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.21.0",
+    "vitest": "^2.1.8"
+  }
+}
