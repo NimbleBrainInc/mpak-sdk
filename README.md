@@ -6,9 +6,8 @@ TypeScript SDK for mpak registry - MCPB bundles and Agent Skills.
 
 - Zero runtime dependencies (native `fetch` and `crypto` only)
 - Requires Node.js 18+
-- Type-safe API with full TypeScript support
+- Type-safe API (types generated from OpenAPI spec)
 - Fail-closed integrity verification
-- Supports multiple skill sources: mpak, GitHub, URL
 
 ## Installation
 
@@ -18,85 +17,86 @@ npm install @nimblebrain/mpak-sdk
 
 ## Usage
 
-### Basic Usage
+### Search Bundles
 
 ```typescript
 import { MpakClient } from '@nimblebrain/mpak-sdk';
 
 const client = new MpakClient();
 
-// Fetch skill content
-const skill = await client.getSkillContent({
-  name: '@nimbletools/folk-crm',
-  version: '1.0.0',
-});
+// Search for bundles
+const results = await client.searchBundles({ q: 'mcp', limit: 10 });
 
-console.log(skill.content); // Markdown content
-console.log(skill.verified); // false (no integrity check)
+for (const bundle of results.bundles) {
+  console.log(`${bundle.name}@${bundle.latest_version}`);
+}
 ```
 
-### With Integrity Verification
+### Get Bundle Details
 
 ```typescript
-const skill = await client.getSkillContent({
-  name: '@nimbletools/folk-crm',
-  version: '1.0.0',
-  integrity: 'sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
-});
+const bundle = await client.getBundle('@nimblebraininc/echo');
 
-// Throws MpakIntegrityError if hash doesn't match (fail-closed)
-console.log(skill.verified); // true
+console.log(bundle.description);
+console.log(`Versions: ${bundle.versions.map(v => v.version).join(', ')}`);
 ```
 
-### Resolve Skill Reference
-
-Used when fetching skills from mcp-registry metadata:
+### Download a Bundle
 
 ```typescript
-import { MpakClient, type SkillReference } from '@nimblebrain/mpak-sdk';
+// Get download info for the latest version
+const versions = await client.getBundleVersions('@nimblebraininc/echo');
+const download = await client.getBundleDownload(
+  '@nimblebraininc/echo',
+  versions.latest
+);
 
-const client = new MpakClient();
-
-// From mcp-registry server metadata
-const skillRef: SkillReference = {
-  source: 'mpak',
-  name: '@nimbletools/folk-crm',
-  version: '1.0.0',
-  integrity: 'sha256:...',
-};
-
-const resolved = await client.resolveSkillRef(skillRef);
-console.log(resolved.content);
-console.log(resolved.source); // 'mpak'
-console.log(resolved.verified); // true
+console.log(`Download URL: ${download.url}`);
+console.log(`SHA256: ${download.bundle.sha256}`);
 ```
 
-### GitHub Source
+### Platform-Specific Downloads
 
 ```typescript
-const skillRef: SkillReference = {
-  source: 'github',
-  name: 'folk-crm',
-  version: 'v1.0.0',
-  repo: 'folkcrm/folk-mcp',
-  path: 'skills/folk-crm.skill',
-};
+// Detect current platform
+const platform = MpakClient.detectPlatform();
 
-const resolved = await client.resolveSkillRef(skillRef);
+// Get platform-specific download
+const download = await client.getBundleDownload(
+  '@nimblebraininc/echo',
+  '0.1.3',
+  platform
+);
 ```
 
 ### Search Skills
 
 ```typescript
-const results = await client.searchSkills({
-  query: 'crm',
-  tags: 'sales,contacts',
-  limit: 20,
+const skills = await client.searchSkills({
+  q: 'crm',
+  surface: 'claude-code',
+  limit: 10,
 });
 
-for (const skill of results.skills) {
+for (const skill of skills.skills) {
   console.log(`${skill.name}: ${skill.description}`);
 }
+```
+
+### Download Skill with Integrity Verification
+
+```typescript
+// Get skill download info
+const download = await client.getSkillDownload('@nimbletools/folk-crm');
+
+// Download content with SHA256 verification (fail-closed)
+const { content, verified } = await client.downloadSkillContent(
+  download.url,
+  download.skill.sha256 // If hash doesn't match, throws MpakIntegrityError
+);
+
+console.log(`Verified: ${verified}`);
+console.log(content);
 ```
 
 ## Error Handling
@@ -112,14 +112,10 @@ import {
 const client = new MpakClient();
 
 try {
-  const skill = await client.getSkillContent({
-    name: '@nimbletools/nonexistent',
-    version: '1.0.0',
-    integrity: 'sha256:expected-hash',
-  });
+  const bundle = await client.getBundle('@nonexistent/bundle');
 } catch (error) {
   if (error instanceof MpakNotFoundError) {
-    console.error('Skill not found:', error.message);
+    console.error('Bundle not found:', error.message);
   } else if (error instanceof MpakIntegrityError) {
     // CRITICAL: Content was NOT returned (fail-closed)
     console.error('Integrity mismatch!');
@@ -144,21 +140,25 @@ const client = new MpakClient({
 
 ### MpakClient
 
-#### `getSkillContent(options)`
+#### Bundle Methods
 
-Fetch skill content directly from mpak registry.
+- `searchBundles(params?)` - Search for bundles
+- `getBundle(name)` - Get bundle details
+- `getBundleVersions(name)` - List all versions
+- `getBundleVersion(name, version)` - Get specific version info
+- `getBundleDownload(name, version, platform?)` - Get download URL
 
-- `options.name` - Skill name (e.g., '@nimbletools/folk-crm')
-- `options.version` - Version (default: 'latest')
-- `options.integrity` - Expected SHA256 hash (optional, fails closed on mismatch)
+#### Skill Methods
 
-#### `resolveSkillRef(ref)`
+- `searchSkills(params?)` - Search for skills
+- `getSkill(name)` - Get skill details
+- `getSkillDownload(name)` - Get latest version download
+- `getSkillVersionDownload(name, version)` - Get specific version download
+- `downloadSkillContent(url, expectedSha256?)` - Download with optional integrity check
 
-Resolve a skill reference to actual content. Supports mpak, github, and url sources.
+#### Static Methods
 
-#### `searchSkills(options)`
-
-Search for skills in the registry.
+- `MpakClient.detectPlatform()` - Detect current OS/arch
 
 ### Error Types
 
@@ -166,6 +166,44 @@ Search for skills in the registry.
 - `MpakNotFoundError` - Resource not found (404)
 - `MpakIntegrityError` - Hash mismatch (content NOT returned)
 - `MpakNetworkError` - Network failures, timeouts
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run unit tests
+npm run test
+
+# Run integration tests (hits real API)
+npm run test:integration
+
+# Type check
+npm run typecheck
+
+# Lint
+npm run lint
+
+# Full verification
+npm run verify
+
+# Generate types from OpenAPI spec
+npm run generate:types
+
+# Build
+npm run build
+```
+
+## Type Generation
+
+Types are generated from the mpak.dev OpenAPI spec using `openapi-typescript`:
+
+```bash
+npm run generate:types
+```
+
+This fetches the spec from `https://api.mpak.dev/documentation/json` and generates `src/schema.d.ts`.
 
 ## License
 

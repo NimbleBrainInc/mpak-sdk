@@ -12,38 +12,67 @@
  *
  * const client = new MpakClient();
  *
- * // Fetch skill content
- * const skill = await client.getSkillContent({
- *   name: '@nimbletools/folk-crm',
- *   version: '1.0.0',
- * });
+ * // Search for bundles
+ * const bundles = await client.searchBundles({ q: 'mcp' });
  *
- * // Resolve skill reference (from mcp-registry metadata)
- * const resolved = await client.resolveSkillRef({
- *   source: 'mpak',
- *   name: '@nimbletools/folk-crm',
- *   version: '1.0.0',
- *   integrity: 'sha256:abc123...',
- * });
+ * // Get bundle details
+ * const bundle = await client.getBundle('@nimbletools/echo');
+ *
+ * // Search for skills
+ * const skills = await client.searchSkills({ q: 'crm' });
+ *
+ * // Get skill details and download
+ * const skill = await client.getSkill('@nimbletools/folk-crm');
+ * const download = await client.getSkillDownload('@nimbletools/folk-crm');
+ * const { content, verified } = await client.downloadSkillContent(
+ *   download.url,
+ *   download.skill.sha256
+ * );
  * ```
  */
 
 export { MpakClient } from './client.js';
 
+// Configuration
+export type { MpakClientConfig } from './types.js';
+
+// Bundle types
 export type {
-  MpakClientConfig,
-  SkillReference,
-  MpakSkillReference,
-  GithubSkillReference,
-  UrlSkillReference,
-  ResolvedSkill,
-  SkillContentResult,
-  GetSkillContentOptions,
-  SkillSearchOptions,
-  SkillSearchResult,
-  SkillSearchResponse,
+  BundleSearchResponse,
+  BundleDetailResponse,
+  BundleVersionsResponse,
+  BundleVersionResponse,
+  BundleDownloadResponse,
+  BundleIndexResponse,
+  BundleSearchParams,
+  Bundle,
+  BundleDetail,
+  BundleVersion,
+  BundleArtifact,
+  BundleDownloadInfo,
 } from './types.js';
 
+// Skill types
+export type {
+  SkillSearchResponse,
+  SkillDetailResponse,
+  SkillDownloadResponse,
+  SkillSearchParams,
+  Skill,
+  SkillDetail,
+  SkillDownloadInfo,
+  SkillVersion,
+} from './types.js';
+
+// Common types
+export type {
+  Platform,
+  Pagination,
+  Provenance,
+  Author,
+} from './types.js';
+
+// Errors
 export {
   MpakError,
   MpakNotFoundError,

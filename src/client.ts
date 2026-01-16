@@ -1,14 +1,17 @@
 import { createHash } from 'crypto';
 import type {
   MpakClientConfig,
-  SkillReference,
-  GithubSkillReference,
-  UrlSkillReference,
-  ResolvedSkill,
-  SkillContentResult,
-  GetSkillContentOptions,
-  SkillSearchOptions,
+  BundleSearchResponse,
+  BundleDetailResponse,
+  BundleVersionsResponse,
+  BundleVersionResponse,
+  BundleDownloadResponse,
+  BundleSearchParams,
   SkillSearchResponse,
+  SkillDetailResponse,
+  SkillDownloadResponse,
+  SkillSearchParams,
+  Platform,
 } from './types.js';
 import {
   MpakNotFoundError,
@@ -34,90 +37,146 @@ export class MpakClient {
     this.timeout = config.timeout ?? DEFAULT_TIMEOUT;
   }
 
+  // ===========================================================================
+  // Bundle API
+  // ===========================================================================
+
   /**
-   * Fetch skill content directly from mpak registry
-   *
-   * @throws {MpakNotFoundError} If skill not found
-   * @throws {MpakIntegrityError} If integrity check fails (fail-closed)
-   * @throws {MpakNetworkError} For network failures
+   * Search for bundles
    */
-  async getSkillContent(options: GetSkillContentOptions): Promise<SkillContentResult> {
-    const version = options.version ?? 'latest';
-    const encodedName = encodeURIComponent(options.name);
-    const url = `${this.registryUrl}/v1/skills/${encodedName}/versions/${version}/content`;
+  async searchBundles(params: BundleSearchParams = {}): Promise<BundleSearchResponse> {
+    const searchParams = new URLSearchParams();
+    if (params.q) searchParams.set('q', params.q);
+    if (params.type) searchParams.set('type', params.type);
+    if (params.sort) searchParams.set('sort', params.sort);
+    if (params.limit) searchParams.set('limit', String(params.limit));
+    if (params.offset) searchParams.set('offset', String(params.offset));
+
+    const queryString = searchParams.toString();
+    const url = `${this.registryUrl}/v1/bundles/search${queryString ? `?${queryString}` : ''}`;
 
     const response = await this.fetchWithTimeout(url);
 
+    if (!response.ok) {
+      throw new MpakNetworkError(`Failed to search bundles: HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<BundleSearchResponse>;
+  }
+
+  /**
+   * Get bundle details
+   */
+  async getBundle(name: string): Promise<BundleDetailResponse> {
+    this.validateScopedName(name);
+
+    const url = `${this.registryUrl}/v1/bundles/${name}`;
+    const response = await this.fetchWithTimeout(url);
+
     if (response.status === 404) {
-      throw new MpakNotFoundError(`${options.name}@${version}`);
+      throw new MpakNotFoundError(name);
     }
 
     if (!response.ok) {
-      throw new MpakNetworkError(`Failed to fetch skill: HTTP ${response.status}`);
+      throw new MpakNetworkError(`Failed to get bundle: HTTP ${response.status}`);
     }
 
-    const content = await response.text();
-
-    // Integrity verification (fail-closed)
-    if (options.integrity) {
-      const verified = this.verifyIntegrity(content, options.integrity);
-      if (!verified) {
-        const actualHash = this.computeSha256(content);
-        const expectedHash = this.extractHash(options.integrity);
-        throw new MpakIntegrityError(expectedHash, actualHash);
-      }
-      return { content, version, verified: true };
-    }
-
-    return { content, version, verified: false };
+    return response.json() as Promise<BundleDetailResponse>;
   }
 
   /**
-   * Resolve a skill reference to actual content
-   * Supports mpak, github, and url sources
-   *
-   * @throws {MpakNotFoundError} If skill not found
-   * @throws {MpakIntegrityError} If integrity check fails (fail-closed)
-   * @throws {MpakNetworkError} For network failures
+   * Get all versions of a bundle
    */
-  async resolveSkillRef(ref: SkillReference): Promise<ResolvedSkill> {
-    switch (ref.source) {
-      case 'mpak': {
-        const result = await this.getSkillContent({
-          name: ref.name,
-          version: ref.version,
-          integrity: ref.integrity,
-        });
-        return { ...result, source: 'mpak' };
-      }
+  async getBundleVersions(name: string): Promise<BundleVersionsResponse> {
+    this.validateScopedName(name);
 
-      case 'github':
-        return this.resolveGithubSkill(ref);
+    const url = `${this.registryUrl}/v1/bundles/${name}/versions`;
+    const response = await this.fetchWithTimeout(url);
 
-      case 'url':
-        return this.resolveUrlSkill(ref);
-
-      default: {
-        // Exhaustiveness check - TypeScript will error if we miss a case
-        const _exhaustive: never = ref;
-        throw new Error(`Unknown skill source: ${(_exhaustive as SkillReference).source}`);
-      }
+    if (response.status === 404) {
+      throw new MpakNotFoundError(name);
     }
+
+    if (!response.ok) {
+      throw new MpakNetworkError(`Failed to get bundle versions: HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<BundleVersionsResponse>;
   }
 
   /**
-   * Search for skills in the registry
+   * Get a specific version of a bundle
    */
-  async searchSkills(options: SkillSearchOptions = {}): Promise<SkillSearchResponse> {
+  async getBundleVersion(name: string, version: string): Promise<BundleVersionResponse> {
+    this.validateScopedName(name);
+
+    const url = `${this.registryUrl}/v1/bundles/${name}/versions/${version}`;
+    const response = await this.fetchWithTimeout(url);
+
+    if (response.status === 404) {
+      throw new MpakNotFoundError(`${name}@${version}`);
+    }
+
+    if (!response.ok) {
+      throw new MpakNetworkError(`Failed to get bundle version: HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<BundleVersionResponse>;
+  }
+
+  /**
+   * Get download info for a bundle
+   */
+  async getBundleDownload(
+    name: string,
+    version: string,
+    platform?: Platform
+  ): Promise<BundleDownloadResponse> {
+    this.validateScopedName(name);
+
     const params = new URLSearchParams();
-    if (options.query) params.set('q', options.query);
-    if (options.tags) params.set('tags', options.tags);
-    if (options.surface) params.set('surface', options.surface);
-    if (options.limit) params.set('limit', String(options.limit));
-    if (options.offset) params.set('offset', String(options.offset));
+    if (platform) {
+      params.set('os', platform.os);
+      params.set('arch', platform.arch);
+    }
 
     const queryString = params.toString();
-    const url = `${this.registryUrl}/v1/skills${queryString ? `?${queryString}` : ''}`;
+    const url = `${this.registryUrl}/v1/bundles/${name}/versions/${version}/download${queryString ? `?${queryString}` : ''}`;
+
+    const response = await this.fetchWithTimeout(url, {
+      headers: { Accept: 'application/json' },
+    });
+
+    if (response.status === 404) {
+      throw new MpakNotFoundError(`${name}@${version}`);
+    }
+
+    if (!response.ok) {
+      throw new MpakNetworkError(`Failed to get bundle download: HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<BundleDownloadResponse>;
+  }
+
+  // ===========================================================================
+  // Skill API
+  // ===========================================================================
+
+  /**
+   * Search for skills
+   */
+  async searchSkills(params: SkillSearchParams = {}): Promise<SkillSearchResponse> {
+    const searchParams = new URLSearchParams();
+    if (params.q) searchParams.set('q', params.q);
+    if (params.tags) searchParams.set('tags', params.tags);
+    if (params.category) searchParams.set('category', params.category);
+    if (params.surface) searchParams.set('surface', params.surface);
+    if (params.sort) searchParams.set('sort', params.sort);
+    if (params.limit) searchParams.set('limit', String(params.limit));
+    if (params.offset) searchParams.set('offset', String(params.offset));
+
+    const queryString = searchParams.toString();
+    const url = `${this.registryUrl}/v1/skills/search${queryString ? `?${queryString}` : ''}`;
 
     const response = await this.fetchWithTimeout(url);
 
@@ -129,54 +188,138 @@ export class MpakClient {
   }
 
   /**
-   * Resolve a skill from GitHub releases
+   * Get skill details
    */
-  private async resolveGithubSkill(ref: GithubSkillReference): Promise<ResolvedSkill> {
-    const url = `https://github.com/${ref.repo}/releases/download/${ref.version}/${ref.path}`;
+  async getSkill(name: string): Promise<SkillDetailResponse> {
+    this.validateScopedName(name);
+
+    const url = `${this.registryUrl}/v1/skills/${name}`;
     const response = await this.fetchWithTimeout(url);
 
+    if (response.status === 404) {
+      throw new MpakNotFoundError(name);
+    }
+
     if (!response.ok) {
-      throw new MpakNotFoundError(`github:${ref.repo}/${ref.path}@${ref.version}`);
+      throw new MpakNetworkError(`Failed to get skill: HTTP ${response.status}`);
     }
 
-    const content = await response.text();
-
-    if (ref.integrity) {
-      const verified = this.verifyIntegrity(content, ref.integrity);
-      if (!verified) {
-        const actualHash = this.computeSha256(content);
-        const expectedHash = this.extractHash(ref.integrity);
-        throw new MpakIntegrityError(expectedHash, actualHash);
-      }
-      return { content, version: ref.version, source: 'github', verified: true };
-    }
-
-    return { content, version: ref.version, source: 'github', verified: false };
+    return response.json() as Promise<SkillDetailResponse>;
   }
 
   /**
-   * Resolve a skill from a direct URL
+   * Get download info for a skill (latest version)
    */
-  private async resolveUrlSkill(ref: UrlSkillReference): Promise<ResolvedSkill> {
-    const response = await this.fetchWithTimeout(ref.url);
+  async getSkillDownload(name: string): Promise<SkillDownloadResponse> {
+    this.validateScopedName(name);
+
+    const url = `${this.registryUrl}/v1/skills/${name}/download`;
+
+    const response = await this.fetchWithTimeout(url, {
+      headers: { Accept: 'application/json' },
+    });
+
+    if (response.status === 404) {
+      throw new MpakNotFoundError(name);
+    }
 
     if (!response.ok) {
-      throw new MpakNotFoundError(`url:${ref.url}`);
+      throw new MpakNetworkError(`Failed to get skill download: HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<SkillDownloadResponse>;
+  }
+
+  /**
+   * Get download info for a specific skill version
+   */
+  async getSkillVersionDownload(name: string, version: string): Promise<SkillDownloadResponse> {
+    this.validateScopedName(name);
+
+    const url = `${this.registryUrl}/v1/skills/${name}/versions/${version}/download`;
+
+    const response = await this.fetchWithTimeout(url, {
+      headers: { Accept: 'application/json' },
+    });
+
+    if (response.status === 404) {
+      throw new MpakNotFoundError(`${name}@${version}`);
+    }
+
+    if (!response.ok) {
+      throw new MpakNetworkError(`Failed to get skill download: HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<SkillDownloadResponse>;
+  }
+
+  /**
+   * Download skill content and verify integrity
+   *
+   * @throws {MpakIntegrityError} If expectedSha256 is provided and doesn't match (fail-closed)
+   */
+  async downloadSkillContent(
+    downloadUrl: string,
+    expectedSha256?: string
+  ): Promise<{ content: string; verified: boolean }> {
+    const response = await this.fetchWithTimeout(downloadUrl);
+
+    if (!response.ok) {
+      throw new MpakNetworkError(`Failed to download skill: HTTP ${response.status}`);
     }
 
     const content = await response.text();
 
-    if (ref.integrity) {
-      const verified = this.verifyIntegrity(content, ref.integrity);
-      if (!verified) {
-        const actualHash = this.computeSha256(content);
-        const expectedHash = this.extractHash(ref.integrity);
-        throw new MpakIntegrityError(expectedHash, actualHash);
+    if (expectedSha256) {
+      const actualHash = this.computeSha256(content);
+      if (actualHash !== expectedSha256) {
+        throw new MpakIntegrityError(expectedSha256, actualHash);
       }
-      return { content, version: ref.version, source: 'url', verified: true };
+      return { content, verified: true };
     }
 
-    return { content, version: ref.version, source: 'url', verified: false };
+    return { content, verified: false };
+  }
+
+  // ===========================================================================
+  // Utility Methods
+  // ===========================================================================
+
+  /**
+   * Detect the current platform
+   */
+  static detectPlatform(): Platform {
+    const nodePlatform = process.platform;
+    const nodeArch = process.arch;
+
+    let os: string;
+    switch (nodePlatform) {
+      case 'darwin':
+        os = 'darwin';
+        break;
+      case 'win32':
+        os = 'win32';
+        break;
+      case 'linux':
+        os = 'linux';
+        break;
+      default:
+        os = 'any';
+    }
+
+    let arch: string;
+    switch (nodeArch) {
+      case 'x64':
+        arch = 'x64';
+        break;
+      case 'arm64':
+        arch = 'arm64';
+        break;
+      default:
+        arch = 'any';
+    }
+
+    return { os, arch };
   }
 
   /**
@@ -187,38 +330,28 @@ export class MpakClient {
   }
 
   /**
-   * Extract hash from integrity string (removes 'sha256:' prefix)
+   * Validate that a name is scoped (@scope/name)
    */
-  private extractHash(integrity: string): string {
-    if (integrity.startsWith('sha256:')) {
-      return integrity.slice(7);
+  private validateScopedName(name: string): void {
+    if (!name.startsWith('@')) {
+      throw new Error('Package name must be scoped (e.g., @scope/package-name)');
     }
-    if (integrity.startsWith('sha256-')) {
-      return integrity.slice(7);
-    }
-    return integrity;
-  }
-
-  /**
-   * Verify content against integrity hash
-   */
-  private verifyIntegrity(content: string, integrity: string): boolean {
-    const expectedHash = this.extractHash(integrity);
-    const actualHash = this.computeSha256(content);
-    return actualHash === expectedHash;
   }
 
   /**
    * Fetch with timeout support
    */
-  private async fetchWithTimeout(url: string): Promise<Response> {
+  private async fetchWithTimeout(
+    url: string,
+    init?: RequestInit
+  ): Promise<Response> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort();
     }, this.timeout);
 
     try {
-      return await fetch(url, { signal: controller.signal });
+      return await fetch(url, { ...init, signal: controller.signal });
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new MpakNetworkError(`Request timeout after ${this.timeout}ms`);
