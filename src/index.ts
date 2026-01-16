@@ -3,12 +3,11 @@
  *
  * TypeScript SDK for mpak registry - MCPB bundles and Agent Skills
  *
- * Zero runtime dependencies - uses native fetch and crypto only.
  * Requires Node.js 18+ for native fetch support.
  *
  * @example
  * ```typescript
- * import { MpakClient } from '@nimblebrain/mpak-sdk';
+ * import { MpakClient, SkillReference } from '@nimblebrain/mpak-sdk';
  *
  * const client = new MpakClient();
  *
@@ -21,13 +20,14 @@
  * // Search for skills
  * const skills = await client.searchSkills({ q: 'crm' });
  *
- * // Get skill details and download
- * const skill = await client.getSkill('@nimbletools/folk-crm');
- * const download = await client.getSkillDownload('@nimbletools/folk-crm');
- * const { content, verified } = await client.downloadSkillContent(
- *   download.url,
- *   download.skill.sha256
- * );
+ * // Resolve a skill reference to content (recommended)
+ * const ref: SkillReference = {
+ *   source: 'mpak',
+ *   name: '@nimblebraininc/folk-crm',
+ *   version: '1.3.0',
+ * };
+ * const resolved = await client.resolveSkillRef(ref);
+ * console.log(resolved.content); // Skill markdown content
  * ```
  */
 
@@ -62,6 +62,12 @@ export type {
   SkillDetail,
   SkillDownloadInfo,
   SkillVersion,
+  // Skill reference types (for resolveSkillRef)
+  SkillReference,
+  MpakSkillReference,
+  GithubSkillReference,
+  UrlSkillReference,
+  ResolvedSkill,
 } from './types.js';
 
 // Common types
