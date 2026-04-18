@@ -1,3 +1,17 @@
+> [!WARNING]
+> **This repository is archived. Development has moved to the mpak monorepo.**
+>
+> The `@nimblebrain/mpak-sdk` TypeScript SDK now lives at:
+> **👉 [NimbleBrainInc/mpak → packages/sdk-typescript](https://github.com/NimbleBrainInc/mpak/tree/main/packages/sdk-typescript)**
+>
+> The **npm package name is unchanged** — `npm install @nimblebrain/mpak-sdk` continues to work and receives updates from the new location.
+>
+> Issues and pull requests are closed here. Please open new reports against the [mpak monorepo](https://github.com/NimbleBrainInc/mpak/issues).
+>
+> *Previous documentation preserved below for historical reference.*
+
+---
+
 # @nimblebrain/mpak-sdk
 
 TypeScript SDK for mpak registry - MCPB bundles and Agent Skills.
